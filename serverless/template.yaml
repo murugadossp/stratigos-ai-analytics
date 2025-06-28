@@ -1,0 +1,423 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Stratigos AI Platform - Serverless Architecture
+
+# Global parameters
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Environment name
+
+# Global variables
+Globals:
+  Function:
+    Runtime: python3.11
+    MemorySize: 256
+    Timeout: 30
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        DYNAMODB_TABLE_PREFIX: !Sub "stratigos-${Environment}-"
+        S3_BUCKET_PREFIX: !Sub "stratigos-${Environment}-"
+  Api:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowOrigin: "'*'"
+
+# Resources
+Resources:
+  # API Gateway
+  StrategosApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Environment
+      EndpointConfiguration: REGIONAL
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          Description: Usage plan for Stratigos API
+          Quota:
+            Limit: 5000
+            Period: MONTH
+          Throttle:
+            BurstLimit: 100
+            RateLimit: 50
+
+  # DynamoDB Tables
+  PortfolioTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Environment}-portfolios"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  OptimizationResultTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Environment}-optimization-results"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: portfolioId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: ByPortfolio
+          KeySchema:
+            - AttributeName: portfolioId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  SimulationResultTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Environment}-simulation-results"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: portfolioId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: ByPortfolio
+          KeySchema:
+            - AttributeName: portfolioId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  # S3 Buckets
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "stratigos-${Environment}-data"
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
+
+  # IAM Roles
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt PortfolioTable.Arn
+                  - !GetAtt OptimizationResultTable.Arn
+                  - !GetAtt SimulationResultTable.Arn
+                  - !Sub "${PortfolioTable.Arn}/index/*"
+                  - !Sub "${OptimizationResultTable.Arn}/index/*"
+                  - !Sub "${SimulationResultTable.Arn}/index/*"
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt DataBucket.Arn
+                  - !Sub "${DataBucket.Arn}/*"
+
+  # Lambda Functions - Portfolio Management
+  ListPortfoliosFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/portfolios/
+      Handler: list.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          PORTFOLIO_TABLE: !Ref PortfolioTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /portfolios
+            Method: GET
+
+  GetPortfolioFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/portfolios/
+      Handler: get.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          PORTFOLIO_TABLE: !Ref PortfolioTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /portfolios/{id}
+            Method: GET
+
+  CreatePortfolioFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/portfolios/
+      Handler: create.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          PORTFOLIO_TABLE: !Ref PortfolioTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /portfolios
+            Method: POST
+
+  UpdatePortfolioFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/portfolios/
+      Handler: update.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          PORTFOLIO_TABLE: !Ref PortfolioTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /portfolios/{id}
+            Method: PUT
+
+  DeletePortfolioFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/portfolios/
+      Handler: delete.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          PORTFOLIO_TABLE: !Ref PortfolioTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /portfolios/{id}
+            Method: DELETE
+
+  # Lambda Functions - Optimization
+  RiskParityOptimizationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/optimization/
+      Handler: risk_parity.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 512
+      Timeout: 60
+      Environment:
+        Variables:
+          PORTFOLIO_TABLE: !Ref PortfolioTable
+          OPTIMIZATION_RESULT_TABLE: !Ref OptimizationResultTable
+          DATA_BUCKET: !Ref DataBucket
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /optimization/risk-parity
+            Method: POST
+
+  HRPOptimizationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/optimization/
+      Handler: hrp.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 512
+      Timeout: 60
+      Environment:
+        Variables:
+          PORTFOLIO_TABLE: !Ref PortfolioTable
+          OPTIMIZATION_RESULT_TABLE: !Ref OptimizationResultTable
+          DATA_BUCKET: !Ref DataBucket
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /optimization/hrp
+            Method: POST
+
+  EfficientFrontierFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/optimization/
+      Handler: efficient_frontier.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 1024
+      Timeout: 120
+      Environment:
+        Variables:
+          PORTFOLIO_TABLE: !Ref PortfolioTable
+          OPTIMIZATION_RESULT_TABLE: !Ref OptimizationResultTable
+          DATA_BUCKET: !Ref DataBucket
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /optimization/efficient-frontier
+            Method: POST
+
+  # Lambda Functions - Monte Carlo
+  SimulateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/monte_carlo/
+      Handler: simulate.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 1024
+      Timeout: 120
+      Environment:
+        Variables:
+          PORTFOLIO_TABLE: !Ref PortfolioTable
+          SIMULATION_RESULT_TABLE: !Ref SimulationResultTable
+          DATA_BUCKET: !Ref DataBucket
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /monte-carlo/simulate
+            Method: POST
+
+  AnalyzeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/monte_carlo/
+      Handler: analyze.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 512
+      Timeout: 60
+      Environment:
+        Variables:
+          SIMULATION_RESULT_TABLE: !Ref SimulationResultTable
+          DATA_BUCKET: !Ref DataBucket
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /monte-carlo/analyze
+            Method: POST
+
+  # Lambda Functions - Market Data
+  GetPricesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/market_data/
+      Handler: get_prices.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucket
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /market-data/prices
+            Method: GET
+
+  GetReturnsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/functions/market_data/
+      Handler: get_returns.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucket
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref StrategosApi
+            Path: /market-data/returns
+            Method: GET
+
+# Outputs
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${StrategosApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+  
+  PortfolioTableName:
+    Description: DynamoDB table for portfolios
+    Value: !Ref PortfolioTable
+  
+  OptimizationResultTableName:
+    Description: DynamoDB table for optimization results
+    Value: !Ref OptimizationResultTable
+  
+  SimulationResultTableName:
+    Description: DynamoDB table for simulation results
+    Value: !Ref SimulationResultTable
+  
+  DataBucketName:
+    Description: S3 bucket for data storage
+    Value: !Ref DataBucket

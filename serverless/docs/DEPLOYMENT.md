@@ -73,17 +73,21 @@ sam deploy --guided
 ```
 
 This will prompt you for the following information:
-- **Stack Name**: The name of the CloudFormation stack (e.g., `stratigos-ai-platform`)
+- **Stack Name**: The name of the CloudFormation stack (e.g., `stratigos-ai-platform-dev`)
 - **AWS Region**: The AWS region to deploy to (e.g., `us-east-1`)
 - **Environment**: The deployment environment (e.g., `dev`, `staging`, `prod`)
 - **Confirm changes before deploy**: Whether to confirm changes before deployment
 - **Allow SAM CLI IAM role creation**: Whether to allow SAM CLI to create IAM roles
 - **Save arguments to samconfig.toml**: Whether to save the deployment configuration
 
-Alternatively, you can use the deployment script:
+Alternatively, you can use the provided deployment scripts for a more streamlined process:
 
 ```bash
-./scripts/deploy.sh
+# Create Lambda layers (run once per environment)
+./scripts/create-layers.sh dev us-east-1
+
+# Deploy the infrastructure
+./scripts/deploy-infrastructure.sh dev us-east-1
 ```
 
 ### 5. Verify Deployment
@@ -211,7 +215,7 @@ Globals:
 1. **Deployment Fails**: If deployment fails, check the CloudFormation events:
 
 ```bash
-aws cloudformation describe-stack-events --stack-name stratigos-ai-platform
+aws cloudformation describe-stack-events --stack-name stratigos-ai-platform-dev
 ```
 
 2. **Lambda Function Errors**: If a Lambda function is failing, check the CloudWatch Logs:
@@ -224,6 +228,14 @@ aws logs get-log-events --log-group-name /aws/lambda/stratigos-ai-platform-ListP
 
 ```bash
 aws logs get-log-events --log-group-name API-Gateway-Execution-Logs_XXXXXXXXXX/dev
+```
+
+4. **Lambda Layer Size Limit Exceeded**: If you encounter an error like "Layers consume more than the available size of 262144000 bytes", reduce the number of layers attached to each function in `template.yaml` by removing non-essential layers from functions that don't require them.
+
+5. **Stack in ROLLBACK_COMPLETE State**: If the stack is in a `ROLLBACK_COMPLETE` state and cannot be updated, delete the stack first before redeploying:
+
+```bash
+aws cloudformation delete-stack --stack-name stratigos-ai-platform-dev
 ```
 
 ### Rollback

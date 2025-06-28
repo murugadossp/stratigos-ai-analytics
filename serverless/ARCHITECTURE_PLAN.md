@@ -8,7 +8,150 @@ This document outlines the architecture and implementation plan for the Stratigo
 
 ### 2.1 Core Components
 
-![Architecture Diagram](https://mermaid.ink/img/pako:eNp1kk1PwzAMhv9KlBOgSf3YpE1w2A6cEBJiB8QOaRo2Qj9EkzJV1f47SdeuGwzlEsd-_dp2TqBdQVBCYXtw9RO3Vt-5Eo1xFh5QWV1aVME5Z9BgWdWILnhlHXpvtSmQvRpbgEJTVVXpHAZXGFMgPDtdYhEcPqHFYDFYNAU-oysxeGMdOvTGlnDvXYUKg3fGBgfnYMbZbDxO2XQ6TaeTdJKlbJam42ySpOPxKGXjUZqNRkmWZmk2StJxNmKTdJQm6TRN2Hg8TrNxwrLJJGXZNGXTyYTNZrPJbDpJpzP2H_rNXYnKGVShcj5UDUpfBYfwjMEFVIULFVr0wdgX9A7hBZV3FiGgd6Vy3m0RNkFVaNCjCt6HrfGBLRA2qIL1oTLOb41rMOxQOYNhZ1wdXLkJDYbgNxjqzfX1YjG_uVks5_PFzfLqdrm4XMwv5hcXy_nZ2dn8_PR0eXl6ery8PD8_Pj45OTk-Pjo6PDw8ODjY39_f29vb3d3d2dnZ3t7e2tra3Nzc2NhYr9e_a_UNhvdoUA?type=png)
+## Updated End-to-End Architecture
+
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        WebApp[Web Application]
+        MobileApp[Mobile App]
+        APIClient[API Clients]
+    end
+    
+    subgraph "AWS Cloud"
+        subgraph "API Gateway Layer"
+            APIGW[API Gateway]
+            Auth[API Key Authentication]
+            Throttle[Rate Limiting & Throttling]
+            Cache[Response Caching]
+        end
+        
+        subgraph "Lambda Functions Layer"
+            subgraph "Portfolio Functions"
+                CreatePortfolio[Create Portfolio]
+                GetPortfolio[Get Portfolio]
+                ListPortfolios[List Portfolios]
+                UpdatePortfolio[Update Portfolio]
+                DeletePortfolio[Delete Portfolio]
+            end
+            
+            subgraph "Optimization Functions"
+                RiskParity[Risk Parity Optimization]
+                HRP[Hierarchical Risk Parity]
+                EfficientFrontier[Efficient Frontier]
+            end
+            
+            subgraph "Analytics Functions"
+                MonteCarloSim[Monte Carlo Simulation]
+                SimAnalysis[Simulation Analysis]
+            end
+            
+            subgraph "Market Data Functions"
+                GetPrices[Get Market Prices]
+                GetReturns[Get Market Returns]
+            end
+        end
+        
+        subgraph "Lambda Layers"
+            CoreLayer[Core Dependencies Layer<br/>boto3, pydantic, requests]
+            NumericLayer[Numeric Computing Layer<br/>numpy, pandas, scipy]
+            PlottingLayer[Visualization Layer<br/>matplotlib, seaborn]
+            UtilsLayer[Utilities Layer<br/>dateutil, uuid]
+        end
+        
+        subgraph "Data Storage Layer"
+            subgraph "DynamoDB Tables"
+                PortfolioTbl[(Portfolios Table)]
+                OptResultTbl[(Optimization Results)]
+                SimResultTbl[(Simulation Results)]
+            end
+            
+            subgraph "S3 Storage"
+                DataBucket[(Data Bucket<br/>Market Data, Reports)]
+                LayerBucket[(Layer Bucket<br/>Lambda Layers)]
+            end
+        end
+        
+        subgraph "Monitoring & Security"
+            CloudWatch[CloudWatch Logs & Metrics]
+            XRay[X-Ray Tracing]
+            IAM[IAM Roles & Policies]
+        end
+    end
+    
+    %% Connections
+    WebApp --> APIGW
+    MobileApp --> APIGW
+    APIClient --> APIGW
+    
+    APIGW --> Auth
+    Auth --> Throttle
+    Throttle --> Cache
+    
+    Cache --> CreatePortfolio
+    Cache --> GetPortfolio
+    Cache --> ListPortfolios
+    Cache --> UpdatePortfolio
+    Cache --> DeletePortfolio
+    Cache --> RiskParity
+    Cache --> HRP
+    Cache --> EfficientFrontier
+    Cache --> MonteCarloSim
+    Cache --> SimAnalysis
+    Cache --> GetPrices
+    Cache --> GetReturns
+    
+    %% Lambda Layers connections
+    CoreLayer -.-> CreatePortfolio
+    CoreLayer -.-> GetPortfolio
+    CoreLayer -.-> ListPortfolios
+    CoreLayer -.-> UpdatePortfolio
+    CoreLayer -.-> DeletePortfolio
+    CoreLayer -.-> GetPrices
+    CoreLayer -.-> GetReturns
+    
+    NumericLayer -.-> RiskParity
+    NumericLayer -.-> HRP
+    NumericLayer -.-> EfficientFrontier
+    NumericLayer -.-> MonteCarloSim
+    NumericLayer -.-> SimAnalysis
+    
+    PlottingLayer -.-> EfficientFrontier
+    PlottingLayer -.-> SimAnalysis
+    
+    %% Data connections
+    CreatePortfolio --> PortfolioTbl
+    GetPortfolio --> PortfolioTbl
+    ListPortfolios --> PortfolioTbl
+    UpdatePortfolio --> PortfolioTbl
+    DeletePortfolio --> PortfolioTbl
+    
+    RiskParity --> OptResultTbl
+    HRP --> OptResultTbl
+    EfficientFrontier --> OptResultTbl
+    
+    MonteCarloSim --> SimResultTbl
+    SimAnalysis --> SimResultTbl
+    
+    GetPrices --> DataBucket
+    GetReturns --> DataBucket
+    EfficientFrontier --> DataBucket
+    MonteCarloSim --> DataBucket
+    
+    %% Layer storage
+    CoreLayer --> LayerBucket
+    NumericLayer --> LayerBucket
+    PlottingLayer --> LayerBucket
+    
+    %% Monitoring
+    CreatePortfolio --> CloudWatch
+    RiskParity --> CloudWatch
+    MonteCarloSim --> CloudWatch
+    
+    CreatePortfolio --> XRay
+    RiskParity --> XRay
+    MonteCarloSim --> XRay
+```
 
 1. **AWS Lambda Functions**
    - Core request handlers
@@ -461,8 +604,150 @@ All errors will return a standard error response format:
 - Edge caching for improved performance
 - Multi-region deployment for high availability
 
-## 13. Conclusion
+## 13. Lambda Layers Strategy
 
-This serverless architecture provides a scalable, cost-effective, and maintainable solution for the Stratigos AI Platform. By leveraging AWS Lambda, API Gateway, DynamoDB, and S3, we can build a robust platform that can handle varying workloads while minimizing operational overhead.
+### 13.1 Clean Installation Approach
 
-The implementation plan outlines a phased approach to building the platform, starting with the core infrastructure and gradually adding features. This approach allows for incremental delivery of value while maintaining a high level of quality.
+**Step 1: Clean Existing Resources**
+```bash
+# Delete existing Lambda functions
+aws lambda list-functions --query 'Functions[?contains(FunctionName, `stratigos`) || contains(FunctionName, `portfolio`)].FunctionName' --output text | xargs -I {} aws lambda delete-function --function-name {}
+
+# Delete existing API Gateway
+aws apigateway get-rest-apis --query 'items[?contains(name, `stratigos`) || contains(name, `Stratigos`)].id' --output text | xargs -I {} aws apigateway delete-rest-api --rest-api-id {}
+
+# Delete existing DynamoDB tables (if needed)
+aws dynamodb list-tables --query 'TableNames[?contains(@, `stratigos`) || contains(@, `portfolio`)]' --output text | xargs -I {} aws dynamodb delete-table --table-name {}
+```
+
+### 13.2 Lambda Layer Creation
+
+**Layer 1: Core Dependencies Layer**
+```bash
+# Create core dependencies layer
+mkdir -p stratigos_core_layer/python/lib/python3.11/site-packages
+cd stratigos_core_layer/python/lib/python3.11/site-packages
+
+# Install core dependencies
+pip install boto3==1.28.0 pydantic==2.4.2 requests==2.31.0 python-dateutil==2.9.0.post0 -t .
+
+# Create layer zip
+cd ../../../../
+zip -r stratigos_core_layer.zip python
+
+# Upload to AWS
+aws lambda publish-layer-version \
+  --layer-name stratigos-core-py311 \
+  --description "Core dependencies for Stratigos AI Platform" \
+  --zip-file fileb://stratigos_core_layer.zip \
+  --compatible-runtimes python3.11
+```
+
+**Layer 2: Numeric Computing Layer**
+```bash
+# Create numeric computing layer
+mkdir -p stratigos_numeric_layer/python/lib/python3.11/site-packages
+cd stratigos_numeric_layer/python/lib/python3.11/site-packages
+
+# Install numeric dependencies
+pip install numpy==1.24.3 pandas==2.0.3 scipy==1.11.1 -t .
+
+# Create layer zip
+cd ../../../../
+zip -r stratigos_numeric_layer.zip python
+
+# Upload to AWS
+aws lambda publish-layer-version \
+  --layer-name stratigos-numeric-py311 \
+  --description "Numeric computing libraries for Stratigos AI Platform" \
+  --zip-file fileb://stratigos_numeric_layer.zip \
+  --compatible-runtimes python3.11
+```
+
+**Layer 3: Visualization Layer**
+```bash
+# Create visualization layer
+mkdir -p stratigos_viz_layer/python/lib/python3.11/site-packages
+cd stratigos_viz_layer/python/lib/python3.11/site-packages
+
+# Install visualization dependencies
+pip install matplotlib==3.7.2 -t .
+
+# Create layer zip
+cd ../../../../
+zip -r stratigos_viz_layer.zip python
+
+# Upload to AWS
+aws lambda publish-layer-version \
+  --layer-name stratigos-viz-py311 \
+  --description "Visualization libraries for Stratigos AI Platform" \
+  --zip-file fileb://stratigos_viz_layer.zip \
+  --compatible-runtimes python3.11
+```
+
+### 13.3 Function-Specific Layer Assignment
+
+**Portfolio Functions** (Basic operations):
+- Core Dependencies Layer only
+- Memory: 256MB, Timeout: 30s
+
+**Optimization Functions** (Compute-intensive):
+- Core Dependencies Layer + Numeric Computing Layer
+- Memory: 1024MB, Timeout: 120s
+
+**Analytics Functions** (Heavy computation):
+- Core Dependencies Layer + Numeric Computing Layer + Visualization Layer
+- Memory: 1536MB, Timeout: 300s
+
+**Market Data Functions** (Data retrieval):
+- Core Dependencies Layer only
+- Memory: 512MB, Timeout: 60s
+
+### 13.4 Deployment Sequence
+
+**Step 1: Infrastructure Setup**
+```bash
+# Create S3 bucket for layers
+aws s3 mb s3://stratigos-dev-layers
+
+# Upload layer zips
+aws s3 cp stratigos_core_layer.zip s3://stratigos-dev-layers/
+aws s3 cp stratigos_numeric_layer.zip s3://stratigos-dev-layers/
+aws s3 cp stratigos_viz_layer.zip s3://stratigos-dev-layers/
+```
+
+**Step 2: SAM Deployment**
+```bash
+# Build the application
+sam build
+
+# Deploy with guided setup
+sam deploy --guided --parameter-overrides Environment=dev
+```
+
+**Step 3: Verification**
+```bash
+# Test basic portfolio function
+curl -X GET https://your-api-id.execute-api.region.amazonaws.com/dev/portfolios \
+  -H "x-api-key: your-api-key"
+
+# Test optimization function
+curl -X POST https://your-api-id.execute-api.region.amazonaws.com/dev/optimization/risk-parity \
+  -H "x-api-key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"portfolioId": "test", "returns": {"AAPL": [0.01, 0.02], "MSFT": [0.02, 0.01]}}'
+```
+
+### 13.5 Benefits of Layered Approach
+
+1. **Reduced Cold Start Times**: Shared dependencies loaded once
+2. **Smaller Function Packages**: Core logic only in function code
+3. **Better Maintainability**: Update dependencies independently
+4. **Cost Optimization**: Shared layers reduce storage costs
+5. **Version Control**: Layer versioning for rollback capability
+
+## 14. Conclusion
+
+This serverless architecture provides a scalable, cost-effective, and maintainable solution for the Stratigos AI Platform. By leveraging AWS Lambda with optimized layers, API Gateway, DynamoDB, and S3, we can build a robust platform that can handle varying workloads while minimizing operational overhead and cold start times.
+
+The layered deployment approach ensures efficient resource utilization, faster function execution, and easier maintenance. The implementation plan outlines a phased approach to building the platform, starting with the core infrastructure and gradually adding features. This approach allows for incremental delivery of value while maintaining a high level of quality.

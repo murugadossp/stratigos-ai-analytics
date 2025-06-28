@@ -7,7 +7,7 @@ This document provides detailed information about the Stratigos AI Platform API.
 The base URL for the API depends on your deployment environment:
 
 - **Development**: `http://localhost:3000`
-- **Production**: `https://[api-id].execute-api.[region].amazonaws.com/[stage]`
+- **Production**: `https://d0jnykdrcc.execute-api.us-east-1.amazonaws.com/dev`
 
 ## Authentication
 

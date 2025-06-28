@@ -19,6 +19,7 @@ Globals:
     Runtime: python3.11
     MemorySize: 256
     Timeout: 30
+    Tracing: Active
     Environment:
       Variables:
         ENVIRONMENT: !Ref Environment
@@ -32,6 +33,46 @@ Globals:
 
 # Resources
 Resources:
+  # Note: LayersBucket is created externally by the create-layers.sh script
+  # We reference it by name in the layer definitions below
+
+  # Lambda Layers
+  CoreDependenciesLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub "stratigos-core-${Environment}"
+      Description: Core dependencies for Stratigos AI Platform (boto3, pydantic, requests)
+      Content:
+        S3Bucket: !Sub "stratigos-${Environment}-layers"
+        S3Key: stratigos_core_layer.zip
+      CompatibleRuntimes:
+        - python3.11
+      LicenseInfo: MIT
+
+  NumericComputingLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub "stratigos-numeric-${Environment}"
+      Description: Numeric computing libraries (numpy, pandas, scipy)
+      Content:
+        S3Bucket: !Sub "stratigos-${Environment}-layers"
+        S3Key: stratigos_numeric_layer.zip
+      CompatibleRuntimes:
+        - python3.11
+      LicenseInfo: MIT
+
+  VisualizationLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub "stratigos-viz-${Environment}"
+      Description: Visualization libraries (matplotlib)
+      Content:
+        S3Bucket: !Sub "stratigos-${Environment}-layers"
+        S3Key: stratigos_viz_layer.zip
+      CompatibleRuntimes:
+        - python3.11
+      LicenseInfo: MIT
+
   # API Gateway
   StrategosApi:
     Type: AWS::Serverless::Api
@@ -180,6 +221,8 @@ Resources:
       CodeUri: src/functions/portfolios/
       Handler: list.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref CoreDependenciesLayer
       Environment:
         Variables:
           PORTFOLIO_TABLE: !Ref PortfolioTable
@@ -197,6 +240,8 @@ Resources:
       CodeUri: src/functions/portfolios/
       Handler: get.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref CoreDependenciesLayer
       Environment:
         Variables:
           PORTFOLIO_TABLE: !Ref PortfolioTable
@@ -214,6 +259,8 @@ Resources:
       CodeUri: src/functions/portfolios/
       Handler: create.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref CoreDependenciesLayer
       Environment:
         Variables:
           PORTFOLIO_TABLE: !Ref PortfolioTable
@@ -231,6 +278,8 @@ Resources:
       CodeUri: src/functions/portfolios/
       Handler: update.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref CoreDependenciesLayer
       Environment:
         Variables:
           PORTFOLIO_TABLE: !Ref PortfolioTable
@@ -248,6 +297,8 @@ Resources:
       CodeUri: src/functions/portfolios/
       Handler: delete.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref CoreDependenciesLayer
       Environment:
         Variables:
           PORTFOLIO_TABLE: !Ref PortfolioTable
@@ -266,8 +317,11 @@ Resources:
       CodeUri: src/functions/optimization/
       Handler: risk_parity.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      MemorySize: 512
-      Timeout: 60
+      MemorySize: 1024
+      Timeout: 120
+      Layers:
+        - !Ref CoreDependenciesLayer
+        - !Ref NumericComputingLayer
       Environment:
         Variables:
           PORTFOLIO_TABLE: !Ref PortfolioTable
@@ -287,8 +341,11 @@ Resources:
       CodeUri: src/functions/optimization/
       Handler: hrp.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      MemorySize: 512
-      Timeout: 60
+      MemorySize: 1024
+      Timeout: 120
+      Layers:
+        - !Ref CoreDependenciesLayer
+        - !Ref NumericComputingLayer
       Environment:
         Variables:
           PORTFOLIO_TABLE: !Ref PortfolioTable
@@ -308,8 +365,11 @@ Resources:
       CodeUri: src/functions/optimization/
       Handler: efficient_frontier.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      MemorySize: 1024
-      Timeout: 120
+      MemorySize: 1536
+      Timeout: 180
+      Layers:
+        - !Ref CoreDependenciesLayer
+        - !Ref NumericComputingLayer
       Environment:
         Variables:
           PORTFOLIO_TABLE: !Ref PortfolioTable
@@ -330,8 +390,11 @@ Resources:
       CodeUri: src/functions/monte_carlo/
       Handler: simulate.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      MemorySize: 1024
-      Timeout: 120
+      MemorySize: 1536
+      Timeout: 300
+      Layers:
+        - !Ref CoreDependenciesLayer
+        - !Ref NumericComputingLayer
       Environment:
         Variables:
           PORTFOLIO_TABLE: !Ref PortfolioTable
@@ -351,8 +414,11 @@ Resources:
       CodeUri: src/functions/monte_carlo/
       Handler: analyze.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      MemorySize: 512
-      Timeout: 60
+      MemorySize: 1024
+      Timeout: 120
+      Layers:
+        - !Ref CoreDependenciesLayer
+        - !Ref NumericComputingLayer
       Environment:
         Variables:
           SIMULATION_RESULT_TABLE: !Ref SimulationResultTable
@@ -372,6 +438,10 @@ Resources:
       CodeUri: src/functions/market_data/
       Handler: get_prices.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 512
+      Timeout: 60
+      Layers:
+        - !Ref CoreDependenciesLayer
       Environment:
         Variables:
           DATA_BUCKET: !Ref DataBucket
@@ -389,6 +459,10 @@ Resources:
       CodeUri: src/functions/market_data/
       Handler: get_returns.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 512
+      Timeout: 60
+      Layers:
+        - !Ref CoreDependenciesLayer
       Environment:
         Variables:
           DATA_BUCKET: !Ref DataBucket
@@ -421,3 +495,19 @@ Outputs:
   DataBucketName:
     Description: S3 bucket for data storage
     Value: !Ref DataBucket
+  
+  LayersBucketName:
+    Description: S3 bucket for Lambda layers
+    Value: !Sub "stratigos-${Environment}-layers"
+  
+  CoreDependenciesLayerArn:
+    Description: ARN of the Core Dependencies Layer
+    Value: !Ref CoreDependenciesLayer
+  
+  NumericComputingLayerArn:
+    Description: ARN of the Numeric Computing Layer
+    Value: !Ref NumericComputingLayer
+  
+  VisualizationLayerArn:
+    Description: ARN of the Visualization Layer
+    Value: !Ref VisualizationLayer
